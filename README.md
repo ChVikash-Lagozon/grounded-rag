@@ -140,6 +140,10 @@ docs/          PROGRESS.md, architecture.md, schema.md, data_profile.md, plans/p
 tests/         pytest suite
 ```
 
-## Architecture
+## Architecture and project knowledge
 
-See [docs/architecture.md](docs/architecture.md).
+- [docs/architecture.md](docs/architecture.md): diagram, component status, the query path as built
+- [docs/PROGRESS.md](docs/PROGRESS.md): what each phase delivered, limitations, next steps
+- [docs/decisions.md](docs/decisions.md): every design decision, why, and what it replaced
+- [docs/findings.md](docs/findings.md): verified DuckDB behaviour, bugs caught, lessons, open risks
+- [docs/plans/](docs/plans/): the approved plan per phase, with implementation changes

@@ -1,6 +1,6 @@
 # Phase 3 Plan — Query Execution Layer
 
-Status: **approved 2026-09-21, all defaults in §9 accepted**. Branch: `phase-3-query-execution`.
+Status: **approved 2026-09-21, all defaults in §9 accepted — implemented** (changes: §0; decisions D-26…D-35). Branch: `phase-3-query-execution`.
 
 ## 0. Changes made during implementation
 

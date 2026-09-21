@@ -4,7 +4,7 @@ Ask business questions in plain English about a car manufacturer's data. An LLM 
 question into DuckDB SQL, which runs against parquet files. The LLM never sees bulk data, only
 the schema, descriptions, small samples, statistics and (optionally) a business ontology.
 
-> Status: **Phase 2 (storage connector, DuckDB catalog, refresh) done.** See
+> Status: **Phase 3 (guarded query execution) done.** See
 > [docs/PROGRESS.md](docs/PROGRESS.md) for what exists today and
 > [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the full plan.
 
@@ -36,7 +36,8 @@ uv run carq schema erd             # regenerate docs/schema.md (ER diagram) from
 uv run carq storage check          # configured storage and its files per dataset
 uv run carq refresh                # scan, validate, activate a new data version (--force, --allow-invalid)
 uv run carq catalog status         # active version, data-through date, latest refreshes
-uv run carq catalog sql "SELECT count(*) FROM fact_sales"   # dev query on the catalog (read-only)
+uv run carq query "SELECT count(*) FROM fact_sales"   # guarded query (--max-rows, --timeout,
+                                                     #   --explain, --format table|json)
 
 uv run pytest                      # tests
 uv run ruff check .                # lint
@@ -106,12 +107,33 @@ process per file, so a refresh waits up to `catalog.busy_timeout_seconds` if ano
 writing. Note that dimension files overwritten in place are read by the views immediately,
 even before a refresh.
 
+## Querying
+
+`carq query` and `carquery.query.QueryEngine` run one SQL statement (DuckDB dialect) on the
+catalog. This is the layer the LLM pipeline will use:
+
+- **Only reads.** One statement typed `SELECT` (including `WITH`, `FROM x`, `DESCRIBE`,
+  `SUMMARIZE`, `SHOW`). `PRAGMA`, `CALL`, DDL/DML, `COPY`, `ATTACH`, `SET` … are rejected.
+- **Sandboxed.** The connection may only read the files pinned by the last refresh, and the
+  configuration is locked. Other files (including `data/ground_truth.yaml`), extensions and
+  settings can't be accessed.
+- **Limited.** `query.max_rows` (more rows set `truncated`), `query.timeout_seconds` (the
+  query is cancelled), and `query.memory_limit`/`threads`. A caller can lower these per call
+  but never raise them.
+- **Validated first.** `EXPLAIN` catches syntax, unknown tables and unknown columns without
+  reading data. `engine.validate(sql)` runs only this step.
+- **Structured errors.** `QueryError` has a `kind` (`syntax`, `unknown_table`,
+  `unknown_column`, `timeout`, `forbidden`, …), the DuckDB message (with line pointer and
+  "did you mean"), a `hint`, and `retryable`. `to_llm()` renders it for a retry prompt.
+- **Logged** as `query_executed` / `query_failed` events with SQL, duration, rows and data
+  version. Set `logging.file` to keep them as JSON lines.
+
 ## Layout
 
 ```text
 config/        YAML configuration: app, schema contract, datasets, generator + reference
 src/carquery/  package: config, logging, CLI, contract, generator/, validation, profile,
-               datasets, storage, catalog, refresh
+               datasets, storage, catalog, refresh, query
 data/          generated/onboarded data and the DuckDB catalog (gitignored)
 eval/          golden questions, few-shot library, reports (reports gitignored)
 docs/          PROGRESS.md, architecture.md, schema.md, data_profile.md, plans/phase-N.md

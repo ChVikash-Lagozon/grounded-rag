@@ -17,6 +17,15 @@ catalog:
   busy_timeout_seconds: 10    # refresh retries this long while another process holds the catalog
   history_limit: 5            # refreshes listed by `carq catalog status`
 
+query:                        # limits for `carq query` and the query engine
+  max_rows: 1000              # rows returned; more sets `truncated`
+  timeout_seconds: 30         # validation + execution, per query
+  memory_limit: 2GB           # DuckDB memory_limit on query connections
+  threads: null               # null = DuckDB default (all cores)
+  max_sql_chars: 20000
+  explain_before_execute: true
+  log_sql_max_chars: 4000
+
 logging:
   level: INFO
   format: console   # console | json

@@ -31,7 +31,8 @@ uv run carq config show | validate
 uv run carq generate history [--preset small] [--overwrite]   # then: generate day N
 uv run carq validate                                         # storage files vs schema contract
 uv run carq refresh [--force] [--allow-invalid]              # new data version in the catalog
-uv run carq catalog status | sql "SELECT ..."  ;  uv run carq storage check
+uv run carq catalog status  ;  uv run carq storage check
+uv run carq query "SELECT ..." [--explain] [--format json]   # guarded query on the catalog
 uv run carq profile && uv run carq schema erd                # regenerate docs/data_profile.md, docs/schema.md
 ```
 
@@ -47,13 +48,17 @@ uv run carq profile && uv run carq schema erd                # regenerate docs/d
   so tests never depend on the machine's environment.
 - `config/schema_contract.yaml` is the single source of truth for tables. After changing it, run
   `carq schema erd` (a test fails if `docs/schema.md` is stale) and regenerate the data.
-- Reading data: queries use `carquery.catalog.open_catalog(config)` (read-only, views pinned
-  by the last refresh). Refresh and validation go through `carquery.storage.get_connector()`
-  and `carquery.refresh.scan/connect_scanned`; never glob storage directly outside a
-  connector. `datafiles.connect_views(data_root, contract)` is the local shortcut for the
+- Reading data: untrusted/LLM SQL goes **only** through `carquery.query.QueryEngine`
+  (sandbox, limits, structured `QueryError`). Internal code may use
+  `carquery.catalog.open_catalog(config)` (read-only, views pinned by the last refresh).
+  Refresh and validation go through `carquery.storage.get_connector()` and
+  `carquery.refresh.scan/connect_scanned`; never glob storage directly outside a connector. `datafiles.connect_views(data_root, contract)` is the local shortcut for the
   generator, profile and tests. Tests that need data use the session `dataset` fixture
   (the `test` preset, generated once, read-only). Copy it before modifying it; tests needing
   a catalog use the `catalog_setup` fixture (a private copy plus a config pointing at it).
+- DuckDB gotchas: never call `con.interrupt()` from a timer thread while the main thread
+  fetches (crashes CPython). Run the query on a worker and interrupt from the caller. Within one
+  process, all connections to a file share one instance (settings are instance-wide).
 - Refresh extension point: append to `carquery.refresh.POST_REFRESH_HOOKS` (Phase 4 stats,
   Phase 5 cache invalidation).
 - The generator is deterministic: randomness comes from `rng_for(seed, stream, chunk)`. Don't

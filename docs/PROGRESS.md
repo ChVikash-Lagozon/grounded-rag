@@ -5,12 +5,85 @@
 | 0 — Scaffolding | ✅ done (2026-09-21) |
 | 1 — Schema contract, synthetic generator, validation | ✅ done (2026-09-21) |
 | 2 — Storage connectors, catalog, refresh | ✅ done (2026-09-21), local-only (ADLS deferred) |
-| 3 — Query execution layer | next: plan to be written |
-| 4 — Context builders and ontology | — |
+| 3 — Query execution layer | ✅ done (2026-09-21), branch `phase-3-query-execution` |
+| 4 — Context builders and ontology | next: plan to be written |
 | 5 — LLM provider layer and orchestration | — |
 | 6 — Evaluation harness | — |
 | 7 — Interface (Streamlit + FastAPI) | — |
 | 8 — Performance / scale-up | later, plan on request |
+
+## Phase 3 — Query execution layer (2026-09-21)
+
+**What was built**
+
+- **`carquery.query.QueryEngine`**: `execute(sql, *, max_rows, timeout) -> QueryResult` and
+  `validate(sql) -> QueryError | None`. It is thread-safe.
+  - *Statement checks*: exactly one statement, typed `SELECT`, not `PRAGMA`/`CALL`, within
+    `max_sql_chars`. Trailing `;` and comments are handled with DuckDB's tokenizer.
+  - *Sandbox*: `allowed_paths` = the pinned files of the active version,
+    `enable_external_access = false`, memory/threads caps, `lock_configuration = true`.
+    Concurrent queries share one sandboxed instance, each on its own cursor, and it is closed
+    when idle.
+  - *EXPLAIN first* (configurable), then execution of
+    `SELECT * FROM (<sql>) LIMIT max_rows + 1` on a worker thread. The caller interrupts it
+    on timeout.
+  - `QueryResult`: columns, DuckDB types, rows, `truncated`, `duration_ms`, `data_version`,
+    `to_records()`.
+  - `QueryError`: `kind` (14 kinds), cleaned message with the caller's line numbers, `hint`
+    (for example the list of tables for `unknown_table`), `retryable`, `to_llm()`,
+    `to_dict()`.
+  - Events: `query_validated`, `query_executed`, `query_failed` (stage, kind, SQL,
+    duration).
+- **Config**: a `query:` section (`max_rows` 1000, `timeout_seconds` 30, `memory_limit` 2GB,
+  `threads`, `max_sql_chars`, `explain_before_execute`, `log_sql_max_chars`). Per-call values
+  can only lower these limits.
+- **CLI**: `carq query "SQL" [--max-rows] [--timeout] [--explain] [--format table|json]`.
+  `carq catalog sql` was removed.
+- **Security test**: 24 blocked capabilities (DDL/DML, COPY/EXPORT, ATTACH, INSTALL/LOAD,
+  SET/RESET, PRAGMA/CALL, multiple statements, reading `ground_truth.yaml`, other files,
+  globs, remote URLs, secrets). It also checks that the data folder is unchanged afterwards.
+
+**Changes from the approved plan** (details in `plans/phase-3.md` §0)
+
+- The sandbox is shared per process instead of one connection per query (DuckDB settings are
+  instance-wide).
+- The catalog treats DuckDB's "different configuration" error as *busy*, so an in-process
+  refresh waits for running queries.
+- New dependency: `pytz`, which DuckDB needs to return `TIMESTAMPTZ` values (`now()`).
+- **Phase 0 bug fixed:** `get_logger()` bound eagerly, so module-level loggers ignored
+  `configure_logging`, printed to stdout and skipped `logging.file`. Logs now go to stderr,
+  as configured.
+
+**How to run**
+
+```bash
+uv run carq refresh
+uv run carq query "SELECT m.powertrain, count(*) FROM fact_sales JOIN fact_production USING (vin) JOIN dim_vehicle_model m USING (model_id) GROUP BY 1"
+uv run carq query "SELECT nope FROM fact_sales" --explain     # structured error, exit 1
+uv run carq query "FROM dim_date" --max-rows 5 --format json
+```
+
+**Known limitations**
+
+- The first engine in a process sets memory/threads for the shared sandbox. Engines with
+  different `query:` limits in one process share them (only `max_rows`/timeout are
+  per-engine).
+- DuckDB lets a connection read its own catalog file and `.wal` (`read_blob`). They hold
+  nothing the views don't expose.
+- `EXPLAIN` doesn't catch constant-folding runtime errors (`SELECT 'x'::INT` validates, then
+  fails at execution as `type_error`).
+- If a query ignores an interrupt for 5 s, its connection is leaked on purpose (closing it
+  under a running query is unsafe). That catalog stays open until the process exits. It was
+  never observed in testing.
+- A read-only catalog connection opened by other code in the same process while a query runs
+  gets the sandboxed (locked) instance.
+- The sandbox is untested with `abfss://` paths (ADLS later).
+
+**Next steps**
+
+- Write `docs/plans/phase-4.md`: `ContextBuilder` with `schema_only`,
+  `schema_with_descriptions` and `ontology` modes, `config/ontology.yaml`, and context stats
+  recomputed through `POST_REFRESH_HOOKS`.
 
 ## Phase 2 — Storage connector, catalog, refresh (2026-09-21)
 

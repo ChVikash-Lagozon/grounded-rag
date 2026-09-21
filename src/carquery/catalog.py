@@ -76,8 +76,15 @@ STATE_DDL = (
 )
 STATE_TABLES = ("_data_version", "_refresh_log", "_table_stats", "_files")
 _BUSY_RETRY_SECONDS = (0.05, 0.1, 0.25, 0.5, 1.0)
-# How DuckDB reports a file held by another process: POSIX lock / Windows sharing violation.
-_BUSY_MARKERS = ("could not set lock", "conflicting lock", "being used by another process")
+# How DuckDB reports a catalog in use: another process holds it (POSIX lock / Windows sharing
+# violation), or this process has it open in the other mode (e.g. queries running during an
+# in-process refresh).
+_BUSY_MARKERS = (
+    "could not set lock",
+    "conflicting lock",
+    "being used by another process",
+    "different configuration than existing connections",
+)
 
 
 class CatalogError(Exception):
@@ -137,7 +144,7 @@ def connect_catalog(
     while True:
         try:
             return duckdb.connect(str(path), read_only=read_only)
-        except duckdb.IOException as exc:
+        except (duckdb.IOException, duckdb.ConnectionException) as exc:
             if not _is_busy(exc):
                 raise CatalogError(f"Cannot open catalog {path}: {exc}") from exc
             remaining = deadline - time.monotonic()

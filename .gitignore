@@ -1,0 +1,32 @@
+# Secrets and machine-local config
+.env
+config/local.yaml
+
+# Python / tooling
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Generated data (keep folder placeholders)
+data/**
+!data/.gitkeep
+*.duckdb
+*.duckdb.wal
+eval/reports/*
+!eval/reports/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

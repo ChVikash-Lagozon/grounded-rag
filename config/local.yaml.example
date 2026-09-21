@@ -1,0 +1,5 @@
+# Copy to config/local.yaml for per-machine overrides (gitignored).
+# Only the keys you set here override config/app.yaml.
+
+logging:
+  level: DEBUG

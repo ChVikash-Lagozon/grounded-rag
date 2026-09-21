@@ -1,0 +1,15 @@
+# Application config. Load order (later wins):
+#   config/app.yaml -> config/local.yaml (optional, gitignored) -> CARQ__SECTION__KEY env vars
+# ${VAR} / ${VAR:-default} are interpolated from the environment (and .env).
+# Relative paths resolve against the repo root (the parent of the config directory).
+
+environment: ${CARQ_ENV:-dev}
+
+paths:
+  data_root: ${DATA_ROOT:-data}
+  catalog_path: ${CATALOG_PATH:-data/catalog.duckdb}
+
+logging:
+  level: INFO
+  format: console   # console | json
+  file: null        # optional path; the file always receives JSON lines

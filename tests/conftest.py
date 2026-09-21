@@ -93,6 +93,23 @@ def catalog_setup(dataset: Dataset, config_dir: Path) -> CatalogSetup:
     return CatalogSetup(config, copy, resolve_datasets(DatasetsFile(), dataset.contract))
 
 
+@pytest.fixture(scope="session")
+def refreshed_catalog(dataset: Dataset, tmp_path_factory: pytest.TempPathFactory) -> AppConfig:
+    """Config for a refreshed catalog over a copy of the `test` preset (shared: read-only)."""
+    from carquery.refresh import refresh
+
+    base = tmp_path_factory.mktemp("refreshed")
+    (base / "config").mkdir()
+    (base / "config" / "app.yaml").write_text(APP_YAML, encoding="utf-8")
+    shutil.copytree(dataset.root, base / "data")
+    config = load_config(base / "config", env={"DATA_ROOT": str(base / "data")})
+    result = refresh(
+        config, dataset.contract, resolve_datasets(DatasetsFile(), dataset.contract), hooks=[]
+    )
+    assert result.status == "active", result.message
+    return config
+
+
 @pytest.fixture
 def data_config_dir(config_dir: Path) -> Path:
     """The temporary config dir plus copies of the repo's data config files."""

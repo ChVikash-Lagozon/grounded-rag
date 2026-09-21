@@ -1,6 +1,6 @@
 # Phase 2 Plan — Storage Connectors, Catalog, Refresh
 
-Status: **approved 2026-09-21, local-only scope** (see §0)
+Status: **approved 2026-09-21, local-only scope (see §0) — implemented** (changes: PROGRESS.md, Phase 2; decisions D-19…D-25)
 
 ## 0. Decisions at approval (override the rest of this plan)
 

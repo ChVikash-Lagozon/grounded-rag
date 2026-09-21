@@ -88,11 +88,25 @@ class CatalogConfig(_Strict):
     history_limit: int = Field(default=5, ge=1)  # refreshes listed by ``carq catalog status``
 
 
+class QueryConfig(_Strict):
+    """Limits for SQL run through :class:`carquery.query.QueryEngine` (per-call values may
+    only lower them)."""
+
+    max_rows: int = Field(default=1000, ge=1)
+    timeout_seconds: float = Field(default=30.0, gt=0)
+    memory_limit: str = Field(default="2GB", pattern=r"^\d+(\.\d+)?\s*(B|[KMGT]i?B)$")
+    threads: int | None = Field(default=None, ge=1)
+    max_sql_chars: int = Field(default=20_000, ge=1)
+    explain_before_execute: bool = True
+    log_sql_max_chars: int = Field(default=4000, ge=0)
+
+
 class AppConfig(_Strict):
     environment: str = "dev"
     paths: PathsConfig
     storage: StorageConfig = StorageConfig()
     catalog: CatalogConfig = CatalogConfig()
+    query: QueryConfig = QueryConfig()
     logging: LoggingConfig = LoggingConfig()
 
 

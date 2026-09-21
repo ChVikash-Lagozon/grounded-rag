@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import textwrap
@@ -103,17 +104,40 @@ def test_cli_refresh_status_sql_and_storage(
     assert "Active version: v1" in status.output
     assert "no_change" in status.output and "fact_warranty_claim" in status.output
 
-    sql = runner.invoke(
-        app, ["catalog", "sql", "SELECT count(*) AS n FROM dim_date", "--limit", "5"], env=env
-    )
-    assert sql.exit_code == 0, sql.output
-    assert "n" in sql.output and "(1 row)" in sql.output
-
-    bad = runner.invoke(app, ["catalog", "sql", "SELECT * FROM nope"], env=env)
-    assert bad.exit_code == 1
-    assert "Query failed" in bad.output
-
     assert runner.invoke(app, ["validate"], env=env).exit_code == 0
+
+
+def test_cli_query(data_config_dir: Path, catalog_setup: CatalogSetup) -> None:
+    env = _cli_env(data_config_dir, catalog_setup)
+    assert runner.invoke(app, ["refresh"], env=env).exit_code == 0
+
+    table = runner.invoke(
+        app, ["query", "SELECT plant_id, plant_name FROM dim_plant ORDER BY 1"], env=env
+    )
+    assert table.exit_code == 0, table.output
+    assert "plant_name" in table.output and "| data v1 |" in table.output
+
+    truncated = runner.invoke(app, ["query", "FROM dim_date", "--max-rows", "2"], env=env)
+    assert truncated.exit_code == 0, truncated.output
+    assert "(2 rows)" in truncated.output and "truncated at 2" in truncated.output
+
+    js = runner.invoke(
+        app, ["query", "SELECT DATE '2026-04-01' AS d, 1 AS n", "--format", "json"], env=env
+    )
+    assert js.exit_code == 0, js.output
+    payload = json.loads(js.stdout)
+    assert payload["columns"] == ["d", "n"] and payload["rows"] == [["2026-04-01", 1]]
+    assert payload["data_version"].startswith("v1 |")
+
+    assert "valid" in runner.invoke(app, ["query", "SELECT 1", "--explain"], env=env).output
+    bad = runner.invoke(app, ["query", "SELECT * FROM nope", "--explain"], env=env)
+    assert bad.exit_code == 1
+    assert "unknown_table" in bad.output and "Hint: Available tables" in bad.output
+
+    blocked = runner.invoke(app, ["query", "DROP VIEW fact_sales"], env=env)
+    assert blocked.exit_code == 1 and "not_read_only" in blocked.output
+
+    assert runner.invoke(app, ["catalog", "sql", "SELECT 1"], env=env).exit_code != 0  # removed
 
 
 def test_cli_refresh_rejected_exits_1(data_config_dir: Path, catalog_setup: CatalogSetup) -> None:

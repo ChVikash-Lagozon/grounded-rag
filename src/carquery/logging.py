@@ -81,8 +81,12 @@ def configure_logging(config: LoggingConfig | None = None, stream: IO[str] | Non
 
 
 def get_logger(name: str | None = None, **initial_context: Any) -> structlog.stdlib.BoundLogger:
-    """Return a structured logger, optionally with context bound to it."""
-    return structlog.stdlib.get_logger(name).bind(**initial_context)
+    """Return a structured logger, optionally with context bound to it.
+
+    The logger is a lazy proxy, so module-level loggers created at import time still follow
+    a later :func:`configure_logging` (binding eagerly would freeze structlog's defaults).
+    """
+    return structlog.stdlib.get_logger(name, **initial_context)
 
 
 def _handler(

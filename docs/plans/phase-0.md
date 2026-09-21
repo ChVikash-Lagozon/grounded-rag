@@ -130,7 +130,7 @@ fact_sales/year=2026/month=09/<file>.parquet     # append-only: new files are ad
 fact_warranty_claim/...                          # small facts may be a single file (partitioning is per table)
 ```
 
-- Catalog views are glob-based (`read_parquet('fact_sales/**/*.parquet', hive_partitioning = true)`), so new files show up without editing any definitions.
+- Catalog views are glob-based (`read_parquet('fact_sales/**/*.parquet', hive_partitioning = true)`), so new files show up without editing any definitions. **[Replaced in Phase 2 by D-20: views are pinned to the file list of the last refresh; see `docs/decisions.md`.]**
 - **`carq refresh`** does five things: scan files → validate against the schema contract (PK, FK, nulls, ranges) → rebuild the DuckDB views → recompute context statistics (Phase 4) → record a new **data version** and invalidate the result cache (Phase 5).
 - A data version is a fingerprint of the file listing (path, size, mtime) plus the maximum fact date. The UI shows it, and eval reports record it.
 - Mutable state (the current data version and the refresh log) goes in a small `_refresh_state` table inside the `.duckdb` catalog, which is not in git.

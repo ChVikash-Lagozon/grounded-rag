@@ -4,12 +4,28 @@ import io
 import json
 from pathlib import Path
 
+import pytest
+
 from carquery.config import LoggingConfig
 from carquery.logging import bind_context, bound_context, configure_logging, get_logger
 
 
 def _json_lines(stream: io.StringIO) -> list[dict]:
     return [json.loads(line) for line in stream.getvalue().splitlines() if line.strip()]
+
+
+def test_logger_created_before_configuration_follows_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    early = get_logger("module_level", component="x")  # like `log = get_logger(__name__)`
+    stream = io.StringIO()
+    configure_logging(LoggingConfig(format="json"), stream=stream)
+
+    early.info("late_event", n=1)
+
+    (record,) = _json_lines(stream)
+    assert record["event"] == "late_event" and record["component"] == "x"
+    assert capsys.readouterr().out == ""  # nothing leaked to stdout
 
 
 def test_json_logging_emits_valid_json_with_bound_context() -> None:

@@ -5,16 +5,28 @@ Natural-language → DuckDB SQL over parquet (car manufacturer PoC). Package `ca
 ## Start of every session
 
 1. Read `docs/PROGRESS.md` (current phase, what exists, known limitations).
-2. The full requirements are in `PROJECT_BRIEF.md`, and decisions that override it are in
-   `docs/plans/phase-0.md` §3.
+2. The full requirements are in `PROJECT_BRIEF.md`. Decisions that override it are indexed in
+   `docs/decisions.md` (details in `docs/plans/phase-N.md`).
+
+## Project knowledge documents (keep them current: they feed the final presentation)
+
+| Document | Holds | Update when |
+|---|---|---|
+| `docs/PROGRESS.md` | phase status, what was built, how to run, limitations, next steps | end of every phase |
+| `docs/plans/phase-N.md` | the approved plan; §0 "changes made during implementation" | before a phase, and whenever implementation departs from it |
+| `docs/decisions.md` | numbered decision log (D-xx): what, why, instead of what, status | a plan is approved, a decision changes or is replaced |
+| `docs/findings.md` | verified tool behaviour (F-xx), bugs caught (B-xx), process lessons, open risks | a probe/test/bug teaches something non-obvious |
+| `docs/architecture.md` | target diagram, component status table, as-built flows | a component is built or its design changes |
+| `README.md` | setup, commands, how each component works | end of every phase |
 
 ## Working rules
 
 - Work **phase by phase**. Before implementing phase N, write `docs/plans/phase-N.md` and
   **stop for approval**.
+- Work on a branch per phase (`phase-N-<topic>`), merged to `main` via a PR.
 - A phase is done when: `uv run pytest` is green, `uv run ruff check .` and
-  `uv run ruff format --check .` are clean, README is updated, and a `docs/PROGRESS.md` entry is
-  written. Then commit.
+  `uv run ruff format --check .` are clean, and the knowledge documents above are updated
+  (README, PROGRESS entry, plan §0, decisions, findings, architecture status). Then commit.
 - Never commit secrets, `.env`, `config/local.yaml` or generated data. Never push without asking.
 - Nothing hardcoded: no paths, credentials, provider URLs or model names in code. They belong
   in `config/*.yaml` and env vars. Add new env vars to `.env.example`.
@@ -31,7 +43,8 @@ uv run carq config show | validate
 uv run carq generate history [--preset small] [--overwrite]   # then: generate day N
 uv run carq validate                                         # storage files vs schema contract
 uv run carq refresh [--force] [--allow-invalid]              # new data version in the catalog
-uv run carq catalog status | sql "SELECT ..."  ;  uv run carq storage check
+uv run carq catalog status  ;  uv run carq storage check
+uv run carq query "SELECT ..." [--explain] [--format json]   # guarded query on the catalog
 uv run carq profile && uv run carq schema erd                # regenerate docs/data_profile.md, docs/schema.md
 ```
 
@@ -47,13 +60,17 @@ uv run carq profile && uv run carq schema erd                # regenerate docs/d
   so tests never depend on the machine's environment.
 - `config/schema_contract.yaml` is the single source of truth for tables. After changing it, run
   `carq schema erd` (a test fails if `docs/schema.md` is stale) and regenerate the data.
-- Reading data: queries use `carquery.catalog.open_catalog(config)` (read-only, views pinned
-  by the last refresh). Refresh and validation go through `carquery.storage.get_connector()`
-  and `carquery.refresh.scan/connect_scanned`; never glob storage directly outside a
-  connector. `datafiles.connect_views(data_root, contract)` is the local shortcut for the
+- Reading data: untrusted/LLM SQL goes **only** through `carquery.query.QueryEngine`
+  (sandbox, limits, structured `QueryError`). Internal code may use
+  `carquery.catalog.open_catalog(config)` (read-only, views pinned by the last refresh).
+  Refresh and validation go through `carquery.storage.get_connector()` and
+  `carquery.refresh.scan/connect_scanned`; never glob storage directly outside a connector. `datafiles.connect_views(data_root, contract)` is the local shortcut for the
   generator, profile and tests. Tests that need data use the session `dataset` fixture
   (the `test` preset, generated once, read-only). Copy it before modifying it; tests needing
   a catalog use the `catalog_setup` fixture (a private copy plus a config pointing at it).
+- DuckDB gotchas: never call `con.interrupt()` from a timer thread while the main thread
+  fetches (crashes CPython). Run the query on a worker and interrupt from the caller. Within one
+  process, all connections to a file share one instance (settings are instance-wide).
 - Refresh extension point: append to `carquery.refresh.POST_REFRESH_HOOKS` (Phase 4 stats,
   Phase 5 cache invalidation).
 - The generator is deterministic: randomness comes from `rng_for(seed, stream, chunk)`. Don't

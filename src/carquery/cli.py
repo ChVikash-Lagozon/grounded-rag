@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Annotated, NoReturn
 
-import duckdb
 import typer
 import yaml
 
@@ -34,6 +33,7 @@ from carquery.generator import (
 from carquery.generator.config import GeneratorConfig, ReferenceData
 from carquery.logging import configure_logging, get_logger
 from carquery.profile import build_profile
+from carquery.query import QueryEngine, QueryError
 from carquery.refresh import connect_scanned, refresh, scan
 from carquery.storage import get_connector
 from carquery.validation import validate, validate_views
@@ -330,30 +330,57 @@ def catalog_status_cmd() -> None:
         )
 
 
-@catalog_app.command("sql")
-def catalog_sql_cmd(
-    query: Annotated[str, typer.Argument(help="SQL to run on the catalog (read-only).")],
-    limit: Annotated[int, typer.Option("--limit", min=1, help="Maximum rows to print.")] = 50,
+@app.command("query")
+def query_cmd(
+    sql: Annotated[str, typer.Argument(help="One read-only SQL query (DuckDB dialect).")],
+    max_rows: Annotated[
+        int | None,
+        typer.Option("--max-rows", min=1, help="Rows to return (at most query.max_rows)."),
+    ] = None,
+    timeout: Annotated[
+        float | None,
+        typer.Option("--timeout", min=0.001, help="Seconds (at most query.timeout_seconds)."),
+    ] = None,
+    explain: Annotated[
+        bool, typer.Option("--explain", help="Only validate (statement checks + EXPLAIN).")
+    ] = False,
+    fmt: Annotated[str, typer.Option("--format", help="Output format: table or json.")] = "table",
 ) -> None:
-    """Run a query on the catalog views (dev convenience; Phase 3 adds the guarded engine)."""
-    config = _load()
+    """Run a guarded query on the catalog: read-only, sandboxed, row limit and timeout."""
+    if fmt not in ("table", "json"):
+        raise typer.BadParameter("must be 'table' or 'json'", param_hint="--format")
+    engine = QueryEngine(_load())
+    if explain:
+        error = engine.validate(sql, timeout=timeout)
+        if error:
+            _query_failed(error)
+        typer.secho("Query is valid.", fg=typer.colors.GREEN)
+        return
     try:
-        con = open_catalog(config)
-    except CatalogError as exc:
-        _fail(str(exc))
-    try:
-        relation = con.sql(query)
-        if relation is None:
-            typer.echo("OK")
-            return
-        rows = relation.fetchmany(limit + 1)
-        _echo_rows(relation.columns, rows[:limit])
-        if len(rows) > limit:
-            typer.echo(f"(first {limit} rows shown; use --limit for more)")
-    except duckdb.Error as exc:
-        _fail(f"Query failed: {exc}")
-    finally:
-        con.close()
+        result = engine.execute(sql, max_rows=max_rows, timeout=timeout)
+    except QueryError as error:
+        _query_failed(error)
+    if fmt == "json":
+        payload = {
+            "columns": result.columns,
+            "types": result.types,
+            "rows": [list(row) for row in result.rows],
+            "truncated": result.truncated,
+            "duration_ms": result.duration_ms,
+            "data_version": result.data_version.label,
+        }
+        typer.echo(json.dumps(payload, default=str, indent=2))
+        return
+    _echo_rows(result.columns, result.rows)
+    more = f", truncated at {result.max_rows}" if result.truncated else ""
+    typer.echo(f"{result.duration_ms:.0f} ms{more} | data {result.data_version.label}")
+
+
+def _query_failed(error: QueryError) -> NoReturn:
+    typer.secho(f"Query {error.kind}: {error.message}", fg=typer.colors.RED, err=True)
+    if error.hint:
+        typer.echo(f"Hint: {error.hint}", err=True)
+    raise typer.Exit(code=1)
 
 
 def _echo_rows(columns: list[str], rows: list[tuple[object, ...]]) -> None:

@@ -53,12 +53,14 @@ class _Strict(BaseModel):
 class PathsConfig(_Strict):
     data_root: Path
     catalog_path: Path
+    docs_dir: Path = Path("docs")
 
     def resolved(self, root: Path) -> PathsConfig:
         """Return a copy with relative paths made absolute against ``root``."""
         return PathsConfig(
             data_root=_resolve(self.data_root, root),
             catalog_path=_resolve(self.catalog_path, root),
+            docs_dir=_resolve(self.docs_dir, root),
         )
 
 

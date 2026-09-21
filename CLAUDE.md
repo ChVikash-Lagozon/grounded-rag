@@ -28,6 +28,9 @@ uv sync
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
 uv run carq config show | validate
+uv run carq generate history [--preset small] [--overwrite]   # then: generate day N
+uv run carq validate                                         # data vs schema contract
+uv run carq profile && uv run carq schema erd                # regenerate docs/data_profile.md, docs/schema.md
 ```
 
 ## Conventions
@@ -40,12 +43,20 @@ uv run carq config show | validate
   names with key/value fields (`log.info("query_executed", rows=10)`), not f-strings.
 - Tests: use the `config_dir` fixture (a temporary config dir) and pass `env={...}` explicitly,
   so tests never depend on the machine's environment.
+- `config/schema_contract.yaml` is the single source of truth for tables. After changing it, run
+  `carq schema erd` (a test fails if `docs/schema.md` is stale) and regenerate the data.
+- Reading data: `carquery.datafiles.connect_views(data_root, contract)` gives a DuckDB
+  connection with one view per table. Tests that need data use the session `dataset` fixture
+  (the `test` preset, generated once, read-only). Copy it before modifying it.
+- The generator is deterministic: randomness comes from `rng_for(seed, stream, chunk)`. Don't
+  use global numpy random state. Pattern changes need their detection SQL updated in
+  `generator/patterns.py`.
 - The CLI is typer. Add subcommands in `carquery/cli.py`, or as sub-apps once it grows.
 
 ## Key decisions (see docs/plans/phase-0.md §3)
 
 - Loading is **external**. Dimensions are full reloads at fixed paths, and facts are
-  append-only files in `year=/month=` partitions. We only build **refresh**: scan → validate →
+  append-only files (`year=/month=` partitions only in the medium/large presets). We only build **refresh**: scan → validate →
   rebuild views → recompute stats → new data version → invalidate cache. There are no version
   folders and no rollback.
 - `config/datasets.yaml` = static definitions. Runtime state (data version, refresh log) is kept

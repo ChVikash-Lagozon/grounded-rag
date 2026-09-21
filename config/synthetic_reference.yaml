@@ -1,0 +1,155 @@
+# Fictional reference catalogue for the synthetic data generator: brands, models, plants,
+# geography, suppliers, parts and failure modes. Real countries and cities; every company and
+# product name is made up. Edit freely - the generator reads everything from here.
+
+# region > country > city. `weight` = share of vehicle demand (and dealers) per region.
+regions:
+  - name: Central Europe
+    weight: 0.32
+    countries:
+      - {name: Germany, weight: 0.65, cities: [Berlin, Munich, Hamburg, Cologne, Stuttgart, Leipzig, Frankfurt]}
+      - {name: Austria, weight: 0.20, cities: [Vienna, Graz, Linz, Salzburg]}
+      - {name: Slovakia, weight: 0.10, cities: [Bratislava, Kosice, Zilina]}
+      - {name: Slovenia, weight: 0.05, cities: [Ljubljana, Maribor]}
+  - name: Western Europe
+    weight: 0.30
+    countries:
+      - {name: France, weight: 0.55, cities: [Paris, Lyon, Marseille, Lille, Toulouse, Bordeaux]}
+      - {name: Netherlands, weight: 0.25, cities: [Amsterdam, Rotterdam, Utrecht, Eindhoven]}
+      - {name: Belgium, weight: 0.20, cities: [Brussels, Antwerp, Ghent, Liege]}
+  - name: Southern Europe
+    weight: 0.26
+    countries:
+      - {name: Italy, weight: 0.45, cities: [Milan, Rome, Turin, Naples, Bologna]}
+      - {name: Spain, weight: 0.35, cities: [Madrid, Barcelona, Valencia, Seville, Bilbao]}
+      - {name: Portugal, weight: 0.12, cities: [Lisbon, Porto, Braga]}
+      - {name: Greece, weight: 0.08, cities: [Athens, Thessaloniki]}
+  - name: Northern Europe
+    weight: 0.12
+    countries:
+      - {name: Finland, weight: 0.55, cities: [Helsinki, Tampere, Turku, Oulu]}
+      - {name: Estonia, weight: 0.25, cities: [Tallinn, Tartu]}
+      - {name: Latvia, weight: 0.20, cities: [Riga, Daugavpils]}
+
+plants:
+  - {name: Leipzig Assembly, country: Germany, city: Leipzig, region: Central Europe, daily_capacity: 420, opened_year: 2004, models: [Nova, Terra, Summit]}
+  - {name: Graz Assembly, country: Austria, city: Graz, region: Central Europe, daily_capacity: 260, opened_year: 1998, models: [Serene, Aero, Vista]}
+  - {name: Bratislava Assembly, country: Slovakia, city: Bratislava, region: Central Europe, daily_capacity: 380, opened_year: 2011, models: [Terra, Ion, Cargo]}
+  - {name: Valencia Assembly, country: Spain, city: Valencia, region: Southern Europe, daily_capacity: 340, opened_year: 2001, models: [Nova, Ion, Vista]}
+  - {name: Lille Assembly, country: France, city: Lille, region: Western Europe, daily_capacity: 300, opened_year: 2008, models: [Nova, Serene, Summit, Aero]}
+
+# One entry per model; one dim_vehicle_model row per trim. `weight` = relative popularity.
+# first/last_model_year limit when a trim is built (the model year starts on 1 July of the
+# previous calendar year).
+brands:
+  - name: Veltra
+    wmi: VLT
+    models:
+      - name: Nova
+        body_type: Hatchback
+        segment: Compact
+        trims:
+          - {trim: Base, powertrain: ICE, engine_displacement_l: 1.0, fuel_consumption_l_per_100km: 5.4, base_msrp: 21900, first_model_year: 2019, last_model_year: 2025, weight: 3}
+          - {trim: Style, powertrain: ICE, engine_displacement_l: 1.2, fuel_consumption_l_per_100km: 5.6, base_msrp: 24500, first_model_year: 2019, weight: 3}
+          - {trim: Hybrid Style, powertrain: Hybrid, engine_displacement_l: 1.5, battery_kwh: 1.1, fuel_consumption_l_per_100km: 4.1, base_msrp: 27900, first_model_year: 2021, weight: 3}
+          - {trim: Base 2026, powertrain: ICE, engine_displacement_l: 1.0, fuel_consumption_l_per_100km: 5.2, base_msrp: 22900, first_model_year: 2026, weight: 3}
+      - name: Terra
+        body_type: SUV
+        segment: Midsize
+        trims:
+          - {trim: Comfort, powertrain: ICE, engine_displacement_l: 1.5, fuel_consumption_l_per_100km: 6.6, base_msrp: 31900, first_model_year: 2020, weight: 3}
+          - {trim: Hybrid Comfort, powertrain: Hybrid, engine_displacement_l: 1.6, battery_kwh: 1.4, fuel_consumption_l_per_100km: 5.0, base_msrp: 35400, first_model_year: 2021, weight: 3}
+          - {trim: Plug-in Sport, powertrain: PHEV, engine_displacement_l: 1.6, battery_kwh: 14.8, range_km: 62, fuel_consumption_l_per_100km: 1.6, base_msrp: 41900, first_model_year: 2022, weight: 2}
+      - name: Ion
+        body_type: Hatchback
+        segment: Compact
+        trims:
+          - {trim: Standard Range, powertrain: BEV, battery_kwh: 58.0, range_km: 390, base_msrp: 34900, first_model_year: 2021, weight: 3}
+          - {trim: Long Range, powertrain: BEV, battery_kwh: 77.0, range_km: 520, base_msrp: 41500, first_model_year: 2023, weight: 2}
+      - name: Cargo
+        body_type: Van
+        segment: Commercial
+        trims:
+          - {trim: Panel Van, powertrain: ICE, engine_displacement_l: 2.0, fuel_consumption_l_per_100km: 7.9, base_msrp: 33500, first_model_year: 2018, weight: 2}
+          - {trim: E-Panel Van, powertrain: BEV, battery_kwh: 75.0, range_km: 330, base_msrp: 46900, first_model_year: 2025, weight: 1}
+  - name: Aurelia
+    wmi: AUR
+    models:
+      - name: Serene
+        body_type: Sedan
+        segment: Midsize
+        trims:
+          - {trim: Executive, powertrain: ICE, engine_displacement_l: 2.0, fuel_consumption_l_per_100km: 6.8, base_msrp: 44900, first_model_year: 2019, weight: 2}
+          - {trim: Plug-in Executive, powertrain: PHEV, engine_displacement_l: 2.0, battery_kwh: 18.7, range_km: 78, fuel_consumption_l_per_100km: 1.4, base_msrp: 52900, first_model_year: 2022, weight: 2}
+      - name: Summit
+        body_type: SUV
+        segment: Large
+        trims:
+          - {trim: Plug-in Luxury, powertrain: PHEV, engine_displacement_l: 2.5, battery_kwh: 22.0, range_km: 85, fuel_consumption_l_per_100km: 1.9, base_msrp: 68900, first_model_year: 2021, weight: 2}
+          - {trim: Electric Luxury, powertrain: BEV, battery_kwh: 98.0, range_km: 540, base_msrp: 79900, first_model_year: 2024, weight: 2}
+      - name: Aero
+        body_type: Sedan
+        segment: Midsize
+        trims:
+          - {trim: Performance, powertrain: BEV, battery_kwh: 82.0, range_km: 580, base_msrp: 58900, first_model_year: 2022, weight: 2}
+          - {trim: Grand Touring, powertrain: BEV, battery_kwh: 98.0, range_km: 640, base_msrp: 66900, first_model_year: 2024, weight: 1}
+      - name: Vista
+        body_type: Estate
+        segment: Midsize
+        trims:
+          - {trim: Touring, powertrain: ICE, engine_displacement_l: 2.0, fuel_consumption_l_per_100km: 6.4, base_msrp: 41900, first_model_year: 2019, weight: 2}
+          - {trim: Hybrid Touring, powertrain: Hybrid, engine_displacement_l: 2.0, battery_kwh: 1.6, fuel_consumption_l_per_100km: 4.9, base_msrp: 45900, first_model_year: 2022, weight: 2}
+
+colours: {White: 0.24, Black: 0.20, Grey: 0.19, Silver: 0.12, Blue: 0.11, Red: 0.08, Green: 0.04, Orange: 0.02}
+
+# supplier_tier and quality_rating are descriptive; `categories` = what the supplier makes.
+suppliers:
+  - {name: Kessler Bremsen, country: Germany, tier: Tier 1, quality_rating: 4.1, categories: [Brakes]}
+  - {name: Ferrano Frenos, country: Spain, tier: Tier 1, quality_rating: 4.4, categories: [Brakes]}
+  - {name: Motorwerk Hansa, country: Germany, tier: Tier 1, quality_rating: 4.3, categories: [Powertrain]}
+  - {name: Trasmix Italia, country: Italy, tier: Tier 1, quality_rating: 4.0, categories: [Powertrain]}
+  - {name: Nordvolt Cells, country: Finland, tier: Tier 1, quality_rating: 3.6, categories: [Battery]}
+  - {name: Helion Energy, country: France, tier: Tier 1, quality_rating: 4.5, categories: [Battery]}
+  - {name: Voltaris Elektrik, country: Austria, tier: Tier 2, quality_rating: 3.9, categories: [Electrical]}
+  - {name: Circuitex, country: Slovakia, tier: Tier 2, quality_rating: 4.2, categories: [Electrical]}
+  - {name: Lumen Media Systems, country: Netherlands, tier: Tier 1, quality_rating: 3.8, categories: [Infotainment]}
+  - {name: Sonaro Digital, country: Belgium, tier: Tier 1, quality_rating: 4.1, categories: [Infotainment]}
+  - {name: Federwerk, country: Germany, tier: Tier 1, quality_rating: 4.2, categories: [Suspension]}
+  - {name: Ammortix, country: Italy, tier: Tier 2, quality_rating: 3.9, categories: [Suspension]}
+  - {name: Carrozza Parts, country: Italy, tier: Tier 2, quality_rating: 4.0, categories: [Body]}
+  - {name: Karosserie Linz, country: Austria, tier: Tier 2, quality_rating: 4.3, categories: [Body]}
+
+# Tracked key parts. Each vehicle gets one part per tracked category (Battery for PHEV/BEV,
+# Powertrain for ICE/Hybrid): the first part of that category whose `models` / `powertrains`
+# filters match (a missing filter matches everything). `secondary_supplier` delivers
+# `secondary_share` of batches (default from generator.yaml).
+parts:
+  - {name: Front brake caliper, category: Brakes, unit_cost: 145, primary_supplier: Kessler Bremsen, secondary_supplier: Ferrano Frenos, models: [Nova, Terra, Ion, Cargo]}
+  - {name: Performance brake caliper, category: Brakes, unit_cost: 260, primary_supplier: Ferrano Frenos, secondary_supplier: Kessler Bremsen}
+  - {name: Hybrid drive unit, category: Powertrain, unit_cost: 3100, primary_supplier: Trasmix Italia, secondary_supplier: Motorwerk Hansa, powertrains: [Hybrid]}
+  - {name: 1.0 petrol engine, category: Powertrain, unit_cost: 2100, primary_supplier: Motorwerk Hansa, secondary_supplier: Trasmix Italia, models: [Nova]}
+  - {name: 2.0 diesel engine, category: Powertrain, unit_cost: 3400, primary_supplier: Motorwerk Hansa, secondary_supplier: Trasmix Italia, models: [Cargo]}
+  - {name: 2.0 petrol engine, category: Powertrain, unit_cost: 3000, primary_supplier: Trasmix Italia, secondary_supplier: Motorwerk Hansa, models: [Serene, Vista]}
+  - {name: 1.5 petrol engine, category: Powertrain, unit_cost: 2500, primary_supplier: Motorwerk Hansa, secondary_supplier: Trasmix Italia}
+  - {name: PHEV battery module, category: Battery, unit_cost: 2900, primary_supplier: Helion Energy, secondary_supplier: Nordvolt Cells, powertrains: [PHEV], secondary_share: 0.1}
+  - {name: Battery pack 60-80 kWh, category: Battery, unit_cost: 7400, primary_supplier: Nordvolt Cells, secondary_supplier: Helion Energy, models: [Ion, Cargo], secondary_share: 0.45}
+  - {name: Battery pack 80-100 kWh, category: Battery, unit_cost: 9800, primary_supplier: Helion Energy, secondary_supplier: Nordvolt Cells, secondary_share: 0.45}
+  - {name: Main wiring harness, category: Electrical, unit_cost: 420, primary_supplier: Circuitex, secondary_supplier: Voltaris Elektrik}
+  - {name: Compact infotainment unit, category: Infotainment, unit_cost: 380, primary_supplier: Lumen Media Systems, secondary_supplier: Sonaro Digital, models: [Nova, Ion, Cargo, Terra]}
+  - {name: Premium infotainment unit, category: Infotainment, unit_cost: 720, primary_supplier: Sonaro Digital, secondary_supplier: Lumen Media Systems}
+  - {name: Air suspension module, category: Suspension, unit_cost: 1150, primary_supplier: Federwerk, secondary_supplier: Ammortix, models: [Summit]}
+  - {name: Front strut assembly, category: Suspension, unit_cost: 310, primary_supplier: Ammortix, secondary_supplier: Federwerk}
+  - {name: Power tailgate actuator, category: Body, unit_cost: 240, primary_supplier: Karosserie Linz, secondary_supplier: Carrozza Parts, models: [Terra, Summit, Vista]}
+  - {name: Door lock module, category: Body, unit_cost: 95, primary_supplier: Carrozza Parts, secondary_supplier: Karosserie Linz}
+
+failure_modes:
+  Brakes: [Caliper piston leak, Brake noise, Uneven pad wear]
+  Powertrain: [Oil leak, Turbocharger fault, Transmission shudder, Injector fault]
+  Battery: [Cell voltage imbalance, Cooling circuit leak, Charging fault]
+  Electrical: [Connector corrosion, Short circuit, Sensor fault]
+  Infotainment: [Screen freeze, Bluetooth failure, Navigation fault]
+  Suspension: [Strut leak, Bushing wear, Knocking noise]
+  Body: [Actuator failure, Water ingress, Paint defect]
+
+dealer_name_words: [Central, North, South, East, West, Park, Ring, Harbour, Valley, City, Riverside, Airport, Lakeside, Hill]
+dealer_name_suffixes: [Motors, Autohaus, Cars, Mobility, Automotive, Auto Centre]

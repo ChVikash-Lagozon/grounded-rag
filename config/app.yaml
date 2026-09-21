@@ -8,6 +8,7 @@ environment: ${CARQ_ENV:-dev}
 paths:
   data_root: ${DATA_ROOT:-data}
   catalog_path: ${CATALOG_PATH:-data/catalog.duckdb}
+  docs_dir: docs              # generated docs (data profile, schema) are written here
 
 logging:
   level: INFO

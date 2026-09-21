@@ -1,0 +1,329 @@
+# Schema contract: the single source of truth for every table.
+# Used by the synthetic generator, data validation, the data profile, the ER diagram and
+# (Phase 4) the LLM context. Any real-data loader must produce exactly this.
+#
+# Types are DuckDB type names: VARCHAR, BOOLEAN, SMALLINT, INTEGER, BIGINT, DOUBLE, DATE,
+# DECIMAL(p,s). `checks` are row-level SQL boolean expressions that must hold for every row
+# (NULL counts as passing, like a SQL CHECK constraint).
+
+currency: EUR
+
+tables:
+  # ------------------------------------------------------------------------------------
+  # Dimensions
+  # ------------------------------------------------------------------------------------
+  dim_date:
+    kind: dimension
+    description: >-
+      Calendar with calendar and fiscal attributes. The fiscal year starts on 1 April and is
+      named after the calendar year it ends in (1 Apr 2025 to 31 Mar 2026 = FY2026). A
+      role-playing dimension: join calendar_date to any date column (build_date, sale_date,
+      claim_date, visit_date, delivery_date, ...).
+    grain: one row per calendar day
+    date_column: calendar_date
+    primary_key: [calendar_date]
+    columns:
+      - {name: calendar_date, type: DATE, nullable: false, description: "The calendar day."}
+      - {name: year, type: SMALLINT, nullable: false, description: "Calendar year."}
+      - {name: quarter, type: SMALLINT, nullable: false, min: 1, max: 4, description: "Calendar quarter (1 = Jan-Mar)."}
+      - {name: month, type: SMALLINT, nullable: false, min: 1, max: 12, description: "Calendar month number."}
+      - {name: month_name, type: VARCHAR, nullable: false, description: "Full English month name, e.g. 'September'."}
+      - {name: year_month, type: VARCHAR, nullable: false, description: "Calendar year and month as 'YYYY-MM', e.g. '2026-09'."}
+      - {name: week_of_year, type: SMALLINT, nullable: false, min: 1, max: 53, description: "ISO 8601 week number."}
+      - {name: day_of_week, type: SMALLINT, nullable: false, min: 1, max: 7, description: "ISO day of week (1 = Monday, 7 = Sunday)."}
+      - {name: day_name, type: VARCHAR, nullable: false, description: "Full English day name, e.g. 'Monday'."}
+      - {name: is_weekend, type: BOOLEAN, nullable: false, description: "True on Saturday and Sunday."}
+      - {name: fiscal_year, type: SMALLINT, nullable: false, description: "Fiscal year number; the fiscal year starts 1 April and is named after the year it ends in (Apr 2025-Mar 2026 = 2026)."}
+      - {name: fiscal_quarter, type: SMALLINT, nullable: false, min: 1, max: 4, description: "Fiscal quarter (1 = Apr-Jun, 2 = Jul-Sep, 3 = Oct-Dec, 4 = Jan-Mar)."}
+      - {name: fiscal_year_label, type: VARCHAR, nullable: false, description: "Fiscal year label, e.g. 'FY2026'."}
+
+  dim_vehicle_model:
+    kind: dimension
+    description: >-
+      Vehicle models and trims offered by the manufacturer's brands, with powertrain and
+      technical attributes and the base list price.
+    grain: one row per model and trim
+    primary_key: [model_id]
+    columns:
+      - {name: model_id, type: INTEGER, nullable: false, description: "Surrogate key of the model and trim."}
+      - {name: brand, type: VARCHAR, nullable: false, description: "Brand name."}
+      - {name: model_name, type: VARCHAR, nullable: false, description: "Model name (without trim)."}
+      - {name: trim, type: VARCHAR, nullable: false, description: "Trim level (variant), e.g. 'Base', 'Sport'."}
+      - {name: body_type, type: VARCHAR, nullable: false, allowed_values: [Hatchback, Sedan, Estate, SUV, Van], description: "Body style."}
+      - {name: segment, type: VARCHAR, nullable: false, allowed_values: [Compact, Midsize, Large, Commercial], description: "Market segment."}
+      - {name: powertrain, type: VARCHAR, nullable: false, allowed_values: [ICE, Hybrid, PHEV, BEV], description: "Powertrain: ICE (combustion only), Hybrid, PHEV (plug-in hybrid) or BEV (battery electric vehicle, 'EV')."}
+      - {name: engine_displacement_l, type: "DECIMAL(3,1)", nullable: true, min: 0.8, max: 5.0, description: "Engine displacement in litres; NULL for BEV."}
+      - {name: battery_kwh, type: "DECIMAL(5,1)", nullable: true, min: 0.5, max: 150, description: "Battery capacity in kWh; NULL for ICE."}
+      - {name: range_km, type: INTEGER, nullable: true, min: 10, max: 900, description: "Electric-only range in km (WLTP); NULL for ICE and Hybrid."}
+      - {name: fuel_consumption_l_per_100km, type: "DECIMAL(4,1)", nullable: true, min: 0.5, max: 20, description: "Combined fuel consumption in litres per 100 km; NULL for BEV."}
+      - {name: first_model_year, type: SMALLINT, nullable: false, description: "First model year this trim is offered."}
+      - {name: last_model_year, type: SMALLINT, nullable: true, description: "Last model year offered; NULL while still in production."}
+      - {name: base_msrp, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Base manufacturer's suggested retail price in EUR."}
+    checks:
+      - {name: bev_has_no_engine, expr: "powertrain <> 'BEV' OR engine_displacement_l IS NULL"}
+      - {name: ice_has_no_battery, expr: "powertrain <> 'ICE' OR battery_kwh IS NULL"}
+
+  dim_plant:
+    kind: dimension
+    description: Vehicle assembly plants.
+    grain: one row per plant
+    primary_key: [plant_id]
+    columns:
+      - {name: plant_id, type: INTEGER, nullable: false, description: "Surrogate key of the plant."}
+      - {name: plant_name, type: VARCHAR, nullable: false, description: "Plant name."}
+      - {name: country, type: VARCHAR, nullable: false, description: "Country where the plant is located."}
+      - {name: city, type: VARCHAR, nullable: false, description: "City where the plant is located."}
+      - {name: region, type: VARCHAR, nullable: false, description: "Geographic region of the plant (region > country > city)."}
+      - {name: daily_capacity, type: INTEGER, nullable: false, min: 1, description: "Nominal number of vehicles the plant can build per working day."}
+      - {name: opened_year, type: SMALLINT, nullable: false, description: "Year the plant opened."}
+
+  dim_dealer:
+    kind: dimension
+    description: >-
+      Dealers (retailers) that sell and service vehicles. Some dealers closed during the
+      history; they keep their rows with is_active = false and a closed_date.
+    grain: one row per dealer
+    primary_key: [dealer_id]
+    columns:
+      - {name: dealer_id, type: INTEGER, nullable: false, description: "Surrogate key of the dealer."}
+      - {name: dealer_name, type: VARCHAR, nullable: false, description: "Dealer trading name."}
+      - {name: country, type: VARCHAR, nullable: false, description: "Country of the dealer."}
+      - {name: city, type: VARCHAR, nullable: false, description: "City of the dealer."}
+      - {name: region, type: VARCHAR, nullable: false, description: "Geographic region of the dealer (region > country > city)."}
+      - {name: dealer_tier, type: VARCHAR, nullable: false, allowed_values: [Flagship, Standard, Satellite], description: "Dealer size / format tier."}
+      - {name: opened_date, type: DATE, nullable: false, description: "Date the dealer opened."}
+      - {name: closed_date, type: DATE, nullable: true, description: "Date the dealer closed; NULL if still open."}
+      - {name: is_active, type: BOOLEAN, nullable: false, description: "True if the dealer is currently open."}
+    checks:
+      - {name: closed_after_opened, expr: "closed_date IS NULL OR closed_date > opened_date"}
+      - {name: active_matches_closed, expr: "is_active = (closed_date IS NULL)"}
+
+  dim_customer:
+    kind: dimension
+    description: >-
+      Buyers of vehicles: individuals or fleet (company) customers. Contains no personal
+      data such as names.
+    grain: one row per customer
+    primary_key: [customer_id]
+    columns:
+      - {name: customer_id, type: INTEGER, nullable: false, description: "Surrogate key of the customer."}
+      - {name: customer_type, type: VARCHAR, nullable: false, allowed_values: [Individual, Fleet], description: "Individual (private buyer) or Fleet (company buying several vehicles)."}
+      - {name: age_band, type: VARCHAR, nullable: true, allowed_values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"], description: "Age band of an individual customer; NULL for fleet customers and where unknown."}
+      - {name: country, type: VARCHAR, nullable: false, description: "Country of the customer."}
+      - {name: city, type: VARCHAR, nullable: false, description: "City of the customer."}
+      - {name: region, type: VARCHAR, nullable: false, description: "Geographic region of the customer (region > country > city)."}
+      - {name: first_purchase_date, type: DATE, nullable: false, description: "Date of the customer's first vehicle purchase."}
+    checks:
+      - {name: fleet_has_no_age_band, expr: "customer_type <> 'Fleet' OR age_band IS NULL"}
+
+  dim_supplier:
+    kind: dimension
+    description: Suppliers of vehicle parts.
+    grain: one row per supplier
+    primary_key: [supplier_id]
+    columns:
+      - {name: supplier_id, type: INTEGER, nullable: false, description: "Surrogate key of the supplier."}
+      - {name: supplier_name, type: VARCHAR, nullable: false, description: "Supplier company name."}
+      - {name: country, type: VARCHAR, nullable: false, description: "Country of the supplier."}
+      - {name: supplier_tier, type: VARCHAR, nullable: false, allowed_values: [Tier 1, Tier 2], description: "Supply-chain tier (Tier 1 delivers directly to the plants)."}
+      - {name: quality_rating, type: "DECIMAL(2,1)", nullable: false, min: 1, max: 5, description: "Supplier quality rating from 1.0 (poor) to 5.0 (excellent)."}
+
+  dim_part:
+    kind: dimension
+    description: >-
+      Tracked key parts (not a full bill of materials) with their component category and
+      primary supplier.
+    grain: one row per part
+    primary_key: [part_id]
+    columns:
+      - {name: part_id, type: INTEGER, nullable: false, description: "Surrogate key of the part."}
+      - {name: part_name, type: VARCHAR, nullable: false, description: "Part name."}
+      - {name: component_category, type: VARCHAR, nullable: false, allowed_values: [Brakes, Powertrain, Battery, Electrical, Infotainment, Suspension, Body], description: "Component category of the part."}
+      - {name: unit_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Standard unit cost in EUR."}
+      - {name: primary_supplier_id, type: INTEGER, nullable: false, description: "The part's main supplier."}
+    foreign_keys:
+      - {columns: [primary_supplier_id], references: dim_supplier.supplier_id}
+
+  dim_recall_campaign:
+    kind: dimension
+    description: Recall campaigns announced by the manufacturer for a specific part.
+    grain: one row per recall campaign
+    date_column: announced_date
+    primary_key: [recall_id]
+    columns:
+      - {name: recall_id, type: INTEGER, nullable: false, description: "Surrogate key of the recall campaign."}
+      - {name: campaign_name, type: VARCHAR, nullable: false, description: "Campaign name / reference."}
+      - {name: component_category, type: VARCHAR, nullable: false, allowed_values: [Brakes, Powertrain, Battery, Electrical, Infotainment, Suspension, Body], description: "Component category affected by the recall."}
+      - {name: part_id, type: INTEGER, nullable: false, description: "The part being recalled."}
+      - {name: announced_date, type: DATE, nullable: false, description: "Date the recall was announced."}
+      - {name: remedy_description, type: VARCHAR, nullable: false, description: "What dealers do to remedy an affected vehicle."}
+    foreign_keys:
+      - {columns: [part_id], references: dim_part.part_id}
+      - {columns: [announced_date], references: dim_date.calendar_date}
+
+  # ------------------------------------------------------------------------------------
+  # Facts
+  # ------------------------------------------------------------------------------------
+  fact_production:
+    kind: fact
+    description: >-
+      Every vehicle built, one row per VIN. This is also the vehicle register: every other
+      table's vin refers to it.
+    grain: one row per vehicle (VIN)
+    date_column: build_date
+    primary_key: [vin]
+    columns:
+      - {name: vin, type: VARCHAR, nullable: false, description: "Vehicle identification number (17 characters)."}
+      - {name: model_id, type: INTEGER, nullable: false, description: "Model and trim built."}
+      - {name: plant_id, type: INTEGER, nullable: false, description: "Plant that built the vehicle."}
+      - {name: build_date, type: DATE, nullable: false, description: "Date the vehicle was built."}
+      - {name: model_year, type: SMALLINT, nullable: false, description: "Model year of the vehicle (differs from the build year for vehicles built in the second half of the year)."}
+      - {name: exterior_colour, type: VARCHAR, nullable: true, description: "Exterior paint colour; NULL where not recorded."}
+      - {name: production_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Total cost to build the vehicle in EUR."}
+      - {name: passed_first_inspection, type: BOOLEAN, nullable: false, description: "True if the vehicle passed end-of-line quality inspection the first time."}
+      - {name: rework_hours, type: "DECIMAL(5,1)", nullable: false, min: 0, description: "Hours of rework needed after a failed first inspection; 0 when it passed."}
+    foreign_keys:
+      - {columns: [model_id], references: dim_vehicle_model.model_id}
+      - {columns: [plant_id], references: dim_plant.plant_id}
+      - {columns: [build_date], references: dim_date.calendar_date}
+    checks:
+      - {name: rework_only_when_failed, expr: "rework_hours = 0 OR NOT passed_first_inspection"}
+
+  fact_part_supply:
+    kind: fact
+    description: Deliveries of part batches from suppliers to plants, with incoming inspection results.
+    grain: one row per delivered supply batch
+    date_column: delivery_date
+    primary_key: [supply_batch_id]
+    columns:
+      - {name: supply_batch_id, type: BIGINT, nullable: false, description: "Identifier of the delivered batch."}
+      - {name: part_id, type: INTEGER, nullable: false, description: "Part delivered."}
+      - {name: supplier_id, type: INTEGER, nullable: false, description: "Supplier that delivered the batch."}
+      - {name: plant_id, type: INTEGER, nullable: false, description: "Receiving plant."}
+      - {name: delivery_date, type: DATE, nullable: false, description: "Date the batch was delivered."}
+      - {name: quantity, type: INTEGER, nullable: false, min: 1, description: "Number of units in the batch."}
+      - {name: unit_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Price paid per unit in EUR."}
+      - {name: inspected_defect_rate, type: "DECIMAL(6,4)", nullable: true, min: 0, max: 1, description: "Share of sampled units found defective at incoming inspection (0.0100 = 1%); NULL if not inspected."}
+    foreign_keys:
+      - {columns: [part_id], references: dim_part.part_id}
+      - {columns: [supplier_id], references: dim_supplier.supplier_id}
+      - {columns: [plant_id], references: dim_plant.plant_id}
+      - {columns: [delivery_date], references: dim_date.calendar_date}
+
+  fact_vehicle_component:
+    kind: fact
+    description: >-
+      Traceability of key components: which supply batch each tracked part in a vehicle came
+      from. Covers about six key components per vehicle, not a full bill of materials.
+    grain: one row per vehicle and tracked part
+    primary_key: [vin, part_id]
+    columns:
+      - {name: vin, type: VARCHAR, nullable: false, description: "Vehicle."}
+      - {name: part_id, type: INTEGER, nullable: false, description: "Tracked part fitted to the vehicle."}
+      - {name: supply_batch_id, type: BIGINT, nullable: false, description: "Supply batch the fitted part came from."}
+    foreign_keys:
+      - {columns: [vin], references: fact_production.vin}
+      - {columns: [part_id], references: dim_part.part_id}
+      - {columns: [supply_batch_id], references: fact_part_supply.supply_batch_id}
+
+  fact_sales:
+    kind: fact
+    description: >-
+      Vehicle sales to customers through dealers. A cancelled sale stays in the table with
+      is_cancelled = true; the vehicle may be sold again later under a new sale_id. Units sold
+      normally exclude cancelled sales.
+    grain: one row per sale transaction
+    date_column: sale_date
+    primary_key: [sale_id]
+    columns:
+      - {name: sale_id, type: BIGINT, nullable: false, description: "Identifier of the sale."}
+      - {name: vin, type: VARCHAR, nullable: false, description: "Vehicle sold."}
+      - {name: dealer_id, type: INTEGER, nullable: false, description: "Selling dealer."}
+      - {name: customer_id, type: INTEGER, nullable: false, description: "Buying customer."}
+      - {name: sale_date, type: DATE, nullable: false, description: "Date of the sale (contract signed)."}
+      - {name: dealer_arrival_date, type: DATE, nullable: false, description: "Date the vehicle arrived at the dealer; days-to-sell = sale_date - dealer_arrival_date."}
+      - {name: sale_type, type: VARCHAR, nullable: false, allowed_values: [Retail, Fleet, Lease], description: "Retail (private purchase), Fleet (company purchase) or Lease."}
+      - {name: list_price, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "List price of the vehicle in EUR."}
+      - {name: discount_amount, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Discount given in EUR."}
+      - {name: net_price, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Price actually paid in EUR (list_price - discount_amount); net revenue is the sum of net_price over non-cancelled sales."}
+      - {name: is_cancelled, type: BOOLEAN, nullable: false, description: "True if the sale was cancelled."}
+    foreign_keys:
+      - {columns: [vin], references: fact_production.vin}
+      - {columns: [dealer_id], references: dim_dealer.dealer_id}
+      - {columns: [customer_id], references: dim_customer.customer_id}
+      - {columns: [sale_date], references: dim_date.calendar_date}
+    checks:
+      - {name: net_price_consistent, expr: "net_price = list_price - discount_amount"}
+      - {name: arrival_before_sale, expr: "dealer_arrival_date <= sale_date"}
+
+  fact_service_visit:
+    kind: fact
+    description: Workshop visits of sold vehicles at dealers (scheduled maintenance, repairs and recall work).
+    grain: one row per service visit
+    date_column: visit_date
+    primary_key: [visit_id]
+    columns:
+      - {name: visit_id, type: BIGINT, nullable: false, description: "Identifier of the visit."}
+      - {name: vin, type: VARCHAR, nullable: false, description: "Vehicle serviced."}
+      - {name: dealer_id, type: INTEGER, nullable: false, description: "Dealer workshop that did the work."}
+      - {name: visit_date, type: DATE, nullable: false, description: "Date of the visit."}
+      - {name: visit_type, type: VARCHAR, nullable: false, allowed_values: [Scheduled, Repair, Recall], description: "Scheduled maintenance, Repair (unplanned) or Recall (recall remedy)."}
+      - {name: component_category, type: VARCHAR, nullable: true, allowed_values: [Brakes, Powertrain, Battery, Electrical, Infotainment, Suspension, Body], description: "Component category worked on in a Repair or Recall visit; NULL for Scheduled maintenance."}
+      - {name: odometer_km, type: INTEGER, nullable: true, min: 0, description: "Odometer reading in km; NULL where not recorded."}
+      - {name: labour_hours, type: "DECIMAL(5,1)", nullable: false, min: 0, description: "Labour hours spent."}
+      - {name: total_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Total cost of the visit in EUR (labour and parts)."}
+      - {name: is_warranty, type: BOOLEAN, nullable: false, description: "True if the cost is covered by the manufacturer (warranty or recall)."}
+    foreign_keys:
+      - {columns: [vin], references: fact_production.vin}
+      - {columns: [dealer_id], references: dim_dealer.dealer_id}
+      - {columns: [visit_date], references: dim_date.calendar_date}
+    checks:
+      - {name: category_only_for_repairs, expr: "(visit_type = 'Scheduled') = (component_category IS NULL)"}
+
+  fact_warranty_claim:
+    kind: fact
+    description: >-
+      Warranty claims filed by dealers for failed parts. Claims can reach the manufacturer
+      late: received_date is when the claim arrived, claim_date when the failure was reported
+      at the dealer.
+    grain: one row per warranty claim
+    date_column: claim_date
+    arrival_column: received_date
+    primary_key: [claim_id]
+    columns:
+      - {name: claim_id, type: BIGINT, nullable: false, description: "Identifier of the claim."}
+      - {name: vin, type: VARCHAR, nullable: false, description: "Vehicle with the failure."}
+      - {name: dealer_id, type: INTEGER, nullable: false, description: "Dealer that filed the claim."}
+      - {name: part_id, type: INTEGER, nullable: false, description: "Failed part."}
+      - {name: claim_date, type: DATE, nullable: false, description: "Date the failure was reported at the dealer."}
+      - {name: received_date, type: DATE, nullable: false, description: "Date the claim reached the manufacturer (on or after claim_date)."}
+      - {name: failure_mode, type: VARCHAR, nullable: true, description: "Description of how the part failed; NULL where not recorded."}
+      - {name: odometer_km, type: INTEGER, nullable: false, min: 0, description: "Odometer reading in km at the time of the failure."}
+      - {name: labour_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Labour cost claimed in EUR."}
+      - {name: parts_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Parts cost claimed in EUR."}
+      - {name: total_cost, type: "DECIMAL(12,2)", nullable: false, min: 0, unit: EUR, description: "Total claimed cost in EUR (labour_cost + parts_cost)."}
+      - {name: claim_status, type: VARCHAR, nullable: false, allowed_values: [Approved, Rejected, Pending], description: "Approved, Rejected or Pending (not yet decided). Warranty cost normally counts approved claims only."}
+    foreign_keys:
+      - {columns: [vin], references: fact_production.vin}
+      - {columns: [dealer_id], references: dim_dealer.dealer_id}
+      - {columns: [part_id], references: dim_part.part_id}
+      - {columns: [claim_date], references: dim_date.calendar_date}
+    checks:
+      - {name: total_cost_consistent, expr: "total_cost = labour_cost + parts_cost"}
+      - {name: received_after_claim, expr: "received_date >= claim_date"}
+
+  fact_recall_vehicle:
+    kind: fact
+    description: >-
+      Vehicles affected by a recall campaign and whether the remedy has been done
+      (remedy_completed_date is NULL until then).
+    grain: one row per recall campaign and affected vehicle
+    date_column: remedy_completed_date
+    primary_key: [recall_id, vin]
+    columns:
+      - {name: recall_id, type: INTEGER, nullable: false, description: "Recall campaign."}
+      - {name: vin, type: VARCHAR, nullable: false, description: "Affected vehicle."}
+      - {name: remedy_completed_date, type: DATE, nullable: true, description: "Date the remedy was done at a dealer; NULL if not yet remedied."}
+    foreign_keys:
+      - {columns: [recall_id], references: dim_recall_campaign.recall_id}
+      - {columns: [vin], references: fact_production.vin}

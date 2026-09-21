@@ -1,0 +1,160 @@
+# Synthetic data generator settings. The catalogue (models, plants, suppliers, ...) is in
+# synthetic_reference.yaml. Same seed + config = identical data.
+#
+# Dates in patterns are given as a fraction of the history window (0 = first day, 1 = end_date)
+# so they stay inside the window when end_date or history_years change.
+
+seed: ${GEN_SEED:-42}
+preset: ${GEN_PRESET:-small}
+end_date: ${GEN_END_DATE:-2026-08-31}   # last day of the history
+history_years: 3
+day_horizon_days: 60                   # how far `generate day N` can go past end_date
+
+presets:
+  test:    # used by pytest only
+    vehicles: 15000
+    dealers: 120
+    fleet_customers: 200
+    chunk_months: 12
+    row_group_size: 122880
+    partitioned_tables: []
+  small:
+    vehicles: 50000
+    dealers: 300
+    fleet_customers: 600
+    chunk_months: 6
+    row_group_size: 122880
+    partitioned_tables: []
+  medium:  # supported by design, not run yet (Phase 8)
+    vehicles: 1000000
+    dealers: 1500
+    fleet_customers: 8000
+    chunk_months: 1
+    row_group_size: 1000000
+    partitioned_tables: [fact_production, fact_sales, fact_service_visit, fact_warranty_claim]
+  large:   # supported by design, not run yet (Phase 8)
+    vehicles: 5000000
+    dealers: 3000
+    fleet_customers: 30000
+    chunk_months: 1
+    row_group_size: 1000000
+    partitioned_tables: [fact_production, fact_sales, fact_service_visit, fact_warranty_claim]
+
+production:
+  monthly_seasonality: [0.95, 1.0, 1.05, 1.05, 1.05, 1.0, 0.9, 0.45, 1.05, 1.05, 1.0, 0.75]  # Jan..Dec
+  powertrain_mix_non_bev: {ICE: 0.55, Hybrid: 0.30, PHEV: 0.15}
+  first_inspection_pass_rate: 0.94
+  rework_hours_mean: 2.5
+  production_cost_share: [0.60, 0.72]   # of base_msrp
+  colour_null_rate: 0.01
+  transit_days: [4, 20]
+
+dealers:
+  tier_shares: {Flagship: 0.15, Standard: 0.55, Satellite: 0.30}
+  tier_sales_weight: {Flagship: 3.0, Standard: 2.0, Satellite: 1.0}
+  new_dealer_share: 0.06      # dealers opening during the history or the day horizon
+  closure_rate: 0.04          # dealers closing during the history or the day horizon
+
+sales:
+  sale_type_shares: {Retail: 0.65, Fleet: 0.20, Lease: 0.15}
+  days_to_sell_mean: 35
+  options_uplift: [0.0, 0.12]           # list price = base_msrp * (1 + uplift) * price index
+  annual_price_increase: 0.025
+  discount_ranges:
+    Retail: [0.02, 0.08]
+    Lease: [0.04, 0.10]
+    Fleet: [0.12, 0.18]
+  cancellation_rate: 0.02
+  resale_rate: 0.8                      # share of cancelled vehicles sold again
+  resale_days: [7, 45]
+
+customers:
+  age_bands: {"18-24": 0.05, "25-34": 0.17, "35-44": 0.22, "45-54": 0.23, "55-64": 0.19, "65+": 0.14}
+  age_band_null_rate: 0.03
+  dealer_city_share: 0.7
+
+service:
+  annual_km: {Retail: 13000, Lease: 17000, Fleet: 30000}
+  annual_km_sigma: 0.35
+  scheduled_interval_km: 15000
+  scheduled_interval_months: 12
+  loyal_dealer_share: 0.85
+  labour_rate_eur: 95
+  odometer_null_rate: 0.02
+  repair_rates_per_year: {Brakes: 0.05, Suspension: 0.04, Body: 0.04, Electrical: 0.03}
+
+warranty:
+  years: 3
+  km: 100000
+  battery_years: 8
+  failure_rates_per_year: {Brakes: 0.010, Powertrain: 0.012, Battery: 0.010, Electrical: 0.015, Infotainment: 0.014, Suspension: 0.007, Body: 0.006}
+  weibull_shape: 1.3
+  labour_hours: {Brakes: 1.5, Powertrain: 6.0, Battery: 8.0, Electrical: 2.0, Infotainment: 1.5, Suspension: 2.5, Body: 2.0}
+  rejection_rate: 0.12
+  decision_days_mean: 21
+  failure_mode_null_rate: 0.02
+  reporting_lag_shares: {prompt: 0.70, late: 0.25, very_late: 0.05}   # 0-3 / 4-30 / 31-120 days
+
+supply:
+  secondary_share: 0.25
+  lead_days: 14                 # first delivery this many days before the history starts
+  defect_rate_mean: 0.004
+  defect_rate_null_rate: 0.01
+
+recalls:
+  remedy_days_mean: 60
+  non_response_rate: 0.2
+  other:
+    - campaign_name: RC-INF-01 Infotainment software update
+      part: Compact infotainment unit
+      model: Ion
+      build_window_frac: [0.15, 0.40]
+      announce_frac: 0.50
+      remedy_description: Reflash infotainment software to fix screen freezes.
+
+# Planted patterns. The generator writes the resolved values and detection SQL to
+# <data_root>/ground_truth.yaml.
+patterns:
+  p1_brake_batch:
+    plant: Leipzig Assembly
+    part: Front brake caliper
+    window_start_frac: 0.35
+    window_weeks: 6
+    batch_defect_rate: 0.03
+    extra_claims_per_year: 0.25
+    affected_months: 18
+    failure_mode: Brake caliper seizure
+    recall_after_days: 120
+    campaign_name: RC-BRK-01 Front brake caliper replacement
+    remedy_description: Inspect and replace the front brake calipers from suspect batches.
+  p2_bev_share:                 # BEV share of vehicles by dealer region: [start, end]
+    Northern Europe: [0.08, 0.35]
+    Western Europe: [0.05, 0.22]
+    Central Europe: [0.03, 0.12]
+    Southern Europe: [0.02, 0.08]
+  p3_seasonality:
+    monthly_demand: [0.85, 0.9, 1.15, 1.1, 1.05, 1.0, 0.95, 0.75, 1.05, 1.0, 0.95, 0.8]  # Jan..Dec
+    quarter_end_window_days: 10
+    quarter_end_lookahead_days: 25
+    quarter_end_pull_probability: 0.3
+    quarter_end_extra_discount: 0.02
+  p4_slow_dealers:
+    count: 8
+    days_to_sell_mean: 95
+  p5_line_change:
+    plant: Valencia Assembly
+    model: Nova
+    change_frac: 0.55
+    pass_rate_after: 0.78
+    rework_hours_mean_after: 4.0
+  p7_battery_wear:
+    supplier: Nordvolt Cells
+    km_threshold: 60000
+    months_threshold: 24
+    extra_claims_per_year: 0.30
+    failure_mode: Cell capacity loss
+  p8_regional_repairs:
+    model: Terra
+    region: Northern Europe
+    category: Suspension
+    multiplier: 3.0

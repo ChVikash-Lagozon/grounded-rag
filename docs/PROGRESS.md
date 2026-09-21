@@ -4,13 +4,80 @@
 |---|---|
 | 0 — Scaffolding | ✅ done (2026-09-21) |
 | 1 — Schema contract, synthetic generator, validation | ✅ done (2026-09-21) |
-| 2 — Storage connectors, catalog, refresh | next: plan to be written |
-| 3 — Query execution layer | — |
+| 2 — Storage connectors, catalog, refresh | ✅ done (2026-09-21), local-only (ADLS deferred) |
+| 3 — Query execution layer | next: plan to be written |
 | 4 — Context builders and ontology | — |
 | 5 — LLM provider layer and orchestration | — |
 | 6 — Evaluation harness | — |
 | 7 — Interface (Streamlit + FastAPI) | — |
 | 8 — Performance / scale-up | later, plan on request |
+
+## Phase 2 — Storage connector, catalog, refresh (2026-09-21)
+
+**What was built**
+
+- **Datasets** `config/datasets.yaml` + `carquery.datasets`: one dataset per contract table
+  (path + glob pattern, per-table overrides). Tables unknown to the contract and paths
+  escaping the storage root are config errors. Descriptions stay in the contract.
+- **Storage** `carquery.storage`: the `StorageConnector` protocol (`configure`, `list_files`,
+  `describe`), `LocalConnector`, and `get_connector()` keyed by `storage.backend`.
+- **Catalog** `carquery.catalog`: the persistent `paths.catalog_path` DuckDB file. It has one
+  view per table (contract columns only, pinned to an explicit file list) and the state tables
+  `_data_version` (highest id = active), `_refresh_log`, `_table_stats` (rows, files, bytes,
+  date range) and `_files`. `open_catalog(config)` gives read-only query connections.
+  `connect_catalog` retries while another process writes (`catalog.busy_timeout_seconds`),
+  and recognises both the POSIX lock and the Windows sharing-violation errors.
+- **Refresh** `carquery.refresh.refresh()`: scan → fingerprint (SHA-256 of uri/size/mtime) →
+  `no_change` if the fingerprint is the same → validate the scanned files on a scratch
+  connection → `rejected` on errors (unless `allow_invalid`, which marks the version
+  `validated = false`) → activate in one transaction that re-checks the fingerprint → post-refresh
+  hooks (`POST_REFRESH_HOOKS`, empty for now). Failures give `status="error"` and a log row
+  instead of an exception.
+- **Validation** was refactored into `validate_views(con, contract)`, so it runs on any
+  connection with views. `validate(data_root, …)` is still the local shortcut.
+- **CLI**: `carq refresh [--force] [--allow-invalid]`, `carq catalog status`,
+  `carq catalog sql "…" [--limit]`, `carq storage check`. `carq validate` now checks what the
+  connector sees. CLI output is ASCII-only, because the Windows console could not print
+  DuckDB's box drawing or `·`.
+
+**Changes from the approved plan**
+
+- Local-only, as decided at approval (§0): no `ADLSConnector`, `carq storage upload`,
+  ADLS config/env vars, or parity test.
+- There is no lock file (§0). DuckDB's own single-writer lock plus retry is used instead.
+- The version label is `v3 | 2026-09-21 07:19 UTC | a1b2c3d4` (`|` instead of `·`, and the
+  time is marked UTC).
+- `refresh_id` is a random 12-character hex id, not a sequence, so it can be bound to logs
+  before the catalog is written.
+- New `catalog:` config section: `busy_timeout_seconds`, `history_limit`.
+
+**How to run**
+
+```bash
+uv run carq storage check
+uv run carq refresh            # v1
+uv run carq generate day 1 && uv run carq refresh   # v2
+uv run carq catalog status
+uv run carq catalog sql "SELECT count(*) FROM fact_sales"
+```
+
+**Known limitations**
+
+- Dimensions are overwritten in place, so views read new dimension contents right away,
+  even before a refresh (or after a rejected one). Only fact files are really pinned.
+- A refresh opens the catalog for writing briefly. A long-lived read-only connection in
+  another process (for example a future Streamlit app) blocks it until the timeout.
+  Readers should keep connections short (Phase 7).
+- `catalog sql` has no guards, limits or timeouts beyond read-only access. That is Phase 3.
+- Views list files explicitly with `hive_partitioning = false`, so date filters don't prune
+  partitions (Phase 8).
+- `_table_stats` has only counts and date ranges. Richer statistics come in Phase 4 through the
+  hook.
+
+**Next steps**
+
+- Write `docs/plans/phase-3.md`: the query execution layer (read-only SQL guard, limits and
+  timeouts, result shaping) on top of `open_catalog`.
 
 ## Phase 1 — Schema contract, synthetic generator, validation (2026-09-21)
 

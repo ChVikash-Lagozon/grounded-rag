@@ -1,0 +1,14 @@
+# Where each table's parquet files live, relative to the storage root.
+# Static definitions only: runtime state (data version, refresh log) lives in the catalog.
+# Every table in schema_contract.yaml is a dataset; descriptions stay in the contract.
+#
+# `path` may use {table}. `pattern` is a glob under that path.
+
+defaults:
+  path: "{table}"
+  pattern: "**/*.parquet"
+
+tables: {}
+# Per-table overrides, e.g.:
+#  fact_sales:
+#    path: sales/fact_sales

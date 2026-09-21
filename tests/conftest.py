@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 import structlog
 
+from carquery.config import AppConfig, load_config
 from carquery.contract import SchemaContract, load_contract
+from carquery.datasets import Dataset as DatasetDef
+from carquery.datasets import DatasetsFile, resolve_datasets
 from carquery.generator import generate_history, load_generator_config, load_reference
 from carquery.generator.config import GeneratorConfig, ReferenceData
 
@@ -36,7 +39,12 @@ def repo_config_dir() -> Path:
 # --------------------------------------------------------------------------------------
 
 TEST_PRESET = "test"
-DATA_CONFIG_FILES = ("schema_contract.yaml", "generator.yaml", "synthetic_reference.yaml")
+DATA_CONFIG_FILES = (
+    "schema_contract.yaml",
+    "generator.yaml",
+    "synthetic_reference.yaml",
+    "datasets.yaml",
+)
 
 
 @dataclass
@@ -65,6 +73,24 @@ def dataset(tmp_path_factory: pytest.TempPathFactory) -> Dataset:
     root = tmp_path_factory.mktemp("dataset")
     generate_history(generator, reference, contract, root)
     return Dataset(root, contract, generator, reference)
+
+
+@dataclass
+class CatalogSetup:
+    """A private copy of the `test` dataset plus a config whose catalog lives next to it."""
+
+    config: AppConfig
+    data: Dataset  # root = the copy (safe to modify)
+    datasets: list[DatasetDef]
+
+
+@pytest.fixture
+def catalog_setup(dataset: Dataset, config_dir: Path) -> CatalogSetup:
+    root = config_dir.parent / "data"
+    shutil.copytree(dataset.root, root)
+    config = load_config(config_dir, env={"DATA_ROOT": str(root)})
+    copy = Dataset(root, dataset.contract, dataset.generator, dataset.reference)
+    return CatalogSetup(config, copy, resolve_datasets(DatasetsFile(), dataset.contract))
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ Ask business questions in plain English about a car manufacturer's data. An LLM 
 question into DuckDB SQL, which runs against parquet files. The LLM never sees bulk data, only
 the schema, descriptions, small samples, statistics and (optionally) a business ontology.
 
-> Status: **Phase 1 (schema contract, synthetic data, validation) done.** See
+> Status: **Phase 2 (storage connector, DuckDB catalog, refresh) done.** See
 > [docs/PROGRESS.md](docs/PROGRESS.md) for what exists today and
 > [PROJECT_BRIEF.md](PROJECT_BRIEF.md) for the full plan.
 
@@ -29,9 +29,14 @@ uv run carq config validate        # exit code 1 if the config is invalid
 
 uv run carq generate history       # synthetic history into data/ (--preset, --seed, --overwrite)
 uv run carq generate day 1         # append the files for the day after the history
-uv run carq validate               # check data/ against the schema contract (exit 1 on errors)
+uv run carq validate               # check the storage files against the contract (exit 1 on errors)
 uv run carq profile                # regenerate docs/data_profile.md
 uv run carq schema erd             # regenerate docs/schema.md (ER diagram) from the contract
+
+uv run carq storage check          # configured storage and its files per dataset
+uv run carq refresh                # scan, validate, activate a new data version (--force, --allow-invalid)
+uv run carq catalog status         # active version, data-through date, latest refreshes
+uv run carq catalog sql "SELECT count(*) FROM fact_sales"   # dev query on the catalog (read-only)
 
 uv run pytest                      # tests
 uv run ruff check .                # lint
@@ -80,11 +85,33 @@ the catalogue in `config/synthetic_reference.yaml`):
 - [docs/data_profile.md](docs/data_profile.md) contains row counts, null rates and
   distributions.
 
+## Catalog and refresh
+
+Queries run on a persistent DuckDB **catalog** (`paths.catalog_path`, default
+`data/catalog.duckdb`) with one view per table. Loading data is external: dimensions are
+rewritten in place, facts get new files. The catalog only changes when you run
+`carq refresh`:
+
+1. **Scan** the storage connector (`storage.backend`; only `local` so far) for each dataset
+   in `config/datasets.yaml` (paths and glob patterns, one per contract table).
+2. **Fingerprint** the file list (uri, size, modified). Unchanged files: `no_change`.
+3. **Validate** the scanned files against the schema contract.
+4. **Reject** on errors (the previous version stays active and the new files stay invisible),
+   unless `--allow-invalid`, which activates the version marked "not validated".
+5. **Activate** in one transaction: views pinned to the exact scanned files, per-table stats,
+   and a new data version such as `v3 | 2026-09-21 07:19 UTC | d89ebdc8`.
+
+Every attempt is logged in the catalog (`carq catalog status`). DuckDB allows one writing
+process per file, so a refresh waits up to `catalog.busy_timeout_seconds` if another process is
+writing. Note that dimension files overwritten in place are read by the views immediately,
+even before a refresh.
+
 ## Layout
 
 ```text
-config/        YAML configuration: app, schema contract, generator + reference catalogue
-src/carquery/  package: config, logging, CLI, contract, generator/, validation, profile
+config/        YAML configuration: app, schema contract, datasets, generator + reference
+src/carquery/  package: config, logging, CLI, contract, generator/, validation, profile,
+               datasets, storage, catalog, refresh
 data/          generated/onboarded data and the DuckDB catalog (gitignored)
 eval/          golden questions, few-shot library, reports (reports gitignored)
 docs/          PROGRESS.md, architecture.md, schema.md, data_profile.md, plans/phase-N.md

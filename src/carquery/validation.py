@@ -2,8 +2,8 @@
 
 Checks, per table: files exist, schema (column names and types), primary key unique and not
 null, not-null columns, allowed values, min/max ranges, row-level ``checks`` expressions and
-foreign-key integrity. Everything runs as DuckDB SQL over the parquet files, so it works the
-same for local and (Phase 2) remote storage.
+foreign-key integrity. Everything runs as DuckDB SQL over views, so :func:`validate_views` works
+for any storage connector; :func:`validate` is the shortcut for a local ``data_root``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Literal
 import duckdb
 
 from carquery.contract import SchemaContract, Table
-from carquery.datafiles import connect_views, table_files
+from carquery.datafiles import connect_views
 from carquery.logging import get_logger
 
 Severity = Literal["error", "warning"]
@@ -62,26 +62,32 @@ class ValidationReport:
 
 
 def validate(data_root: Path, contract: SchemaContract) -> ValidationReport:
-    """Validate every contract table under ``data_root``."""
-    report = ValidationReport()
+    """Validate every contract table under a local ``data_root``."""
     con = connect_views(data_root, contract)
     try:
-        present = []
-        for name, table in contract.tables.items():
-            report.checks_run += 1
-            if not table_files(data_root, name):
-                report.issues.append(Issue(name, "files", "no parquet files found"))
-                continue
-            if _check_schema(con, table, report):
-                present.append(table)
-        for table in present:
-            report.row_counts[table.name] = _scalar(con, f"SELECT count(*) FROM {table.name}")
-            _check_table(con, table, report)
-        present_names = {t.name for t in present}
-        for table in present:
-            _check_foreign_keys(con, table, present_names, report)
+        return validate_views(con, contract)
     finally:
         con.close()
+
+
+def validate_views(con: duckdb.DuckDBPyConnection, contract: SchemaContract) -> ValidationReport:
+    """Validate the contract tables exposed as views on ``con`` (a missing view = no files)."""
+    report = ValidationReport()
+    views = {row[0] for row in con.execute("SELECT view_name FROM duckdb_views()").fetchall()}
+    present = []
+    for name, table in contract.tables.items():
+        report.checks_run += 1
+        if name not in views:
+            report.issues.append(Issue(name, "files", "no parquet files found"))
+            continue
+        if _check_schema(con, table, report):
+            present.append(table)
+    for table in present:
+        report.row_counts[table.name] = _scalar(con, f"SELECT count(*) FROM {table.name}")
+        _check_table(con, table, report)
+    present_names = {t.name for t in present}
+    for table in present:
+        _check_foreign_keys(con, table, present_names, report)
     log.info(
         "validation_finished", ok=report.ok, issues=len(report.issues), checks=report.checks_run
     )

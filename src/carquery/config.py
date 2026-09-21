@@ -23,7 +23,7 @@ from typing import Any, Literal, TypeVar
 
 import yaml
 from dotenv import dotenv_values
-from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 CONFIG_DIR_ENV = "CARQ_CONFIG_DIR"
 ENV_OVERRIDE_PREFIX = "CARQ__"
@@ -75,9 +75,24 @@ class LoggingConfig(_Strict):
         return value.upper() if isinstance(value, str) else value
 
 
+class StorageConfig(_Strict):
+    """Where the parquet data is read from. Only ``local`` (``paths.data_root``) exists so far."""
+
+    backend: Literal["local"] = "local"
+
+
+class CatalogConfig(_Strict):
+    """The persistent DuckDB catalog (the file itself is ``paths.catalog_path``)."""
+
+    busy_timeout_seconds: float = Field(default=10.0, ge=0)  # retry while another process writes
+    history_limit: int = Field(default=5, ge=1)  # refreshes listed by ``carq catalog status``
+
+
 class AppConfig(_Strict):
     environment: str = "dev"
     paths: PathsConfig
+    storage: StorageConfig = StorageConfig()
+    catalog: CatalogConfig = CatalogConfig()
     logging: LoggingConfig = LoggingConfig()
 
 
